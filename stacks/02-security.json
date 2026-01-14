@@ -1,0 +1,71 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Security stack - SGs for ALB, EC2, RDS, EFS",
+  "Parameters": {
+    "VpcId": { "Type": "String" }
+  },
+  "Resources": {
+    "ALBSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": { "Ref": "VpcId" },
+        "GroupDescription": "ALB allows HTTP from internet",
+        "SecurityGroupIngress": [
+          { "IpProtocol": "tcp", "FromPort": 80, "ToPort": 80, "CidrIp": "0.0.0.0/0" }
+        ]
+      }
+    },
+    "EC2SecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": { "Ref": "VpcId" },
+        "GroupDescription": "EC2 allows HTTP from ALB + SSH",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "SourceSecurityGroupId": { "Ref": "ALBSecurityGroup" }
+          },
+          { "IpProtocol": "tcp", "FromPort": 22, "ToPort": 22, "CidrIp": "0.0.0.0/0" }
+        ]
+      }
+    },
+    "RDSSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": { "Ref": "VpcId" },
+        "GroupDescription": "RDS allows MySQL from EC2 SG",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 3306,
+            "ToPort": 3306,
+            "SourceSecurityGroupId": { "Ref": "EC2SecurityGroup" }
+          }
+        ]
+      }
+    },
+    "EFSSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": { "Ref": "VpcId" },
+        "GroupDescription": "EFS allows NFS from EC2 SG",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 2049,
+            "ToPort": 2049,
+            "SourceSecurityGroupId": { "Ref": "EC2SecurityGroup" }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "ALBSgId": { "Value": { "Ref": "ALBSecurityGroup" } },
+    "EC2SgId": { "Value": { "Ref": "EC2SecurityGroup" } },
+    "RDSSgId": { "Value": { "Ref": "RDSSecurityGroup" } },
+    "EFSSgId": { "Value": { "Ref": "EFSSecurityGroup" } }
+  }
+}

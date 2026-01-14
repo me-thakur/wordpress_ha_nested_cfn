@@ -1,0 +1,125 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Root stack - Nested stacks for WordPress HA (Network + Security + Storage + App)",
+
+  "Parameters": {
+    "TemplateBucket": {
+      "Type": "String",
+      "Description": "S3 bucket name where nested stack templates exist"
+    },
+    "KeyName": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "Key pair for EC2 SSH"
+    },
+    "DBName": {
+      "Type": "String",
+      "Default": "wordpressdb"
+    },
+    "DBUser": {
+      "Type": "String",
+      "Default": "admin",
+      "NoEcho": true
+    },
+    "DBPassword": {
+      "Type": "String",
+      "MinLength": "8",
+      "NoEcho": true
+    }
+  },
+
+  "Resources": {
+    "NetworkStack": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": {
+          "Fn::Sub": "https://${TemplateBucket}.s3.amazonaws.com/stacks/01-network.json"
+        }
+      }
+    },
+
+    "SecurityStack": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": {
+          "Fn::Sub": "https://${TemplateBucket}.s3.amazonaws.com/stacks/02-security.json"
+        },
+        "Parameters": {
+          "VpcId": {
+            "Fn::GetAtt": ["NetworkStack", "Outputs.VpcId"]
+          }
+        }
+      }
+    },
+
+    "StorageStack": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": {
+          "Fn::Sub": "https://${TemplateBucket}.s3.amazonaws.com/stacks/03-storage.json"
+        },
+        "Parameters": {
+          "PrivateSubnet1Id": {
+            "Fn::GetAtt": ["NetworkStack", "Outputs.PrivateSubnet1Id"]
+          },
+          "PrivateSubnet2Id": {
+            "Fn::GetAtt": ["NetworkStack", "Outputs.PrivateSubnet2Id"]
+          },
+          "RDSSgId": {
+            "Fn::GetAtt": ["SecurityStack", "Outputs.RDSSgId"]
+          },
+          "EFSSgId": {
+            "Fn::GetAtt": ["SecurityStack", "Outputs.EFSSgId"]
+          },
+          "DBName": { "Ref": "DBName" },
+          "DBUser": { "Ref": "DBUser" },
+          "DBPassword": { "Ref": "DBPassword" }
+        }
+      }
+    },
+
+    "AppStack": {
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": {
+          "Fn::Sub": "https://${TemplateBucket}.s3.amazonaws.com/stacks/04-app.json"
+        },
+        "Parameters": {
+          "VpcId": {
+            "Fn::GetAtt": ["NetworkStack", "Outputs.VpcId"]
+          },
+          "PublicSubnet1Id": {
+            "Fn::GetAtt": ["NetworkStack", "Outputs.PublicSubnet1Id"]
+          },
+          "PublicSubnet2Id": {
+            "Fn::GetAtt": ["NetworkStack", "Outputs.PublicSubnet2Id"]
+          },
+          "ALBSgId": {
+            "Fn::GetAtt": ["SecurityStack", "Outputs.ALBSgId"]
+          },
+          "EC2SgId": {
+            "Fn::GetAtt": ["SecurityStack", "Outputs.EC2SgId"]
+          },
+          "EFSFileSystemId": {
+            "Fn::GetAtt": ["StorageStack", "Outputs.EFSFileSystemId"]
+          },
+          "RDSEndpoint": {
+            "Fn::GetAtt": ["StorageStack", "Outputs.RDSEndpoint"]
+          },
+          "KeyName": { "Ref": "KeyName" },
+          "DBName": { "Ref": "DBName" },
+          "DBUser": { "Ref": "DBUser" },
+          "DBPassword": { "Ref": "DBPassword" }
+        }
+      }
+    }
+  },
+
+  "Outputs": {
+    "WordPressURL": {
+      "Description": "Open this URL to access WordPress",
+      "Value": {
+        "Fn::Sub": "http://${AppStack.Outputs.ALBDNSName}"
+      }
+    }
+  }
+}

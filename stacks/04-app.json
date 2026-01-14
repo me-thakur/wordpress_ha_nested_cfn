@@ -1,0 +1,88 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "App stack - ALB + ASG + Launch Template WordPress (AL2023 kernel-6.12)",
+  "Parameters": {
+    "VpcId": { "Type": "String" },
+    "PublicSubnet1Id": { "Type": "String" },
+    "PublicSubnet2Id": { "Type": "String" },
+    "ALBSgId": { "Type": "String" },
+    "EC2SgId": { "Type": "String" },
+    "EFSFileSystemId": { "Type": "String" },
+    "RDSEndpoint": { "Type": "String" },
+    "KeyName": { "Type": "AWS::EC2::KeyPair::KeyName" },
+    "InstanceType": { "Type": "String", "Default": "t3.micro" },
+    "DBName": { "Type": "String" },
+    "DBUser": { "Type": "String", "NoEcho": true },
+    "DBPassword": { "Type": "String", "NoEcho": true },
+    "LatestAL2023Kernel612AmiId": {
+      "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+      "Default": "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.12-x86_64"
+    }
+  },
+  "Resources": {
+    "ALB": {
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties": {
+        "Name": "wordpress-alb",
+        "Scheme": "internet-facing",
+        "Type": "application",
+        "Subnets": [{ "Ref": "PublicSubnet1Id" }, { "Ref": "PublicSubnet2Id" }],
+        "SecurityGroups": [{ "Ref": "ALBSgId" }]
+      }
+    },
+    "TargetGroup": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "VpcId": { "Ref": "VpcId" },
+        "Port": 80,
+        "Protocol": "HTTP",
+        "HealthCheckPath": "/"
+      }
+    },
+    "Listener": {
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Properties": {
+        "LoadBalancerArn": { "Ref": "ALB" },
+        "Port": 80,
+        "Protocol": "HTTP",
+        "DefaultActions": [
+          { "Type": "forward", "TargetGroupArn": { "Ref": "TargetGroup" } }
+        ]
+      }
+    },
+    "LaunchTemplate": {
+      "Type": "AWS::EC2::LaunchTemplate",
+      "Properties": {
+        "LaunchTemplateName": "wordpress-lt-al2023-k612",
+        "LaunchTemplateData": {
+          "ImageId": { "Ref": "LatestAL2023Kernel612AmiId" },
+          "InstanceType": { "Ref": "InstanceType" },
+          "KeyName": { "Ref": "KeyName" },
+          "SecurityGroupIds": [{ "Ref": "EC2SgId" }],
+          "UserData": {
+            "Fn::Base64": {
+              "Fn::Sub": "#!/bin/bash -xe\n\ndnf update -y\n\ndnf install -y httpd php php-mysqlnd wget unzip amazon-efs-utils\n\nsystemctl enable httpd\nsystemctl start httpd\n\nmkdir -p /var/www/html\necho \"${EFSFileSystemId}:/ /var/www/html efs defaults,_netdev 0 0\" >> /etc/fstab\nmount -a\n\nif [ ! -f /var/www/html/wp-config.php ]; then\n  cd /tmp\n  wget https://wordpress.org/latest.zip\n  unzip -o latest.zip\n  cp -r wordpress/* /var/www/html/\n  rm -rf wordpress latest.zip\n\n  cd /var/www/html\n  cp wp-config-sample.php wp-config.php\n  sed -i \"s/database_name_here/${DBName}/\" wp-config.php\n  sed -i \"s/username_here/${DBUser}/\" wp-config.php\n  sed -i \"s/password_here/${DBPassword}/\" wp-config.php\n  sed -i \"s/localhost/${RDSEndpoint}/\" wp-config.php\nfi\n\nchown -R apache:apache /var/www/html\nchmod -R 755 /var/www/html\nsystemctl restart httpd\n"
+            }
+          }
+        }
+      }
+    },
+    "ASG": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "VPCZoneIdentifier": [{ "Ref": "PublicSubnet1Id" }, { "Ref": "PublicSubnet2Id" }],
+        "DesiredCapacity": "2",
+        "MinSize": "1",
+        "MaxSize": "10",
+        "TargetGroupARNs": [{ "Ref": "TargetGroup" }],
+        "LaunchTemplate": {
+          "LaunchTemplateId": { "Ref": "LaunchTemplate" },
+          "Version": { "Fn::GetAtt": ["LaunchTemplate", "LatestVersionNumber"] }
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "ALBDNSName": { "Value": { "Fn::GetAtt": ["ALB", "DNSName"] } }
+  }
+}

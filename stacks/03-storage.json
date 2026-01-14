@@ -1,0 +1,60 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Storage stack - EFS + RDS (private)",
+  "Parameters": {
+    "PrivateSubnet1Id": { "Type": "String" },
+    "PrivateSubnet2Id": { "Type": "String" },
+    "RDSSgId": { "Type": "String" },
+    "EFSSgId": { "Type": "String" },
+    "DBName": { "Type": "String" },
+    "DBUser": { "Type": "String", "NoEcho": true },
+    "DBPassword": { "Type": "String", "NoEcho": true }
+  },
+  "Resources": {
+    "EFSFileSystem": {
+      "Type": "AWS::EFS::FileSystem",
+      "Properties": { "Encrypted": true }
+    },
+    "EFSMountTarget1": {
+      "Type": "AWS::EFS::MountTarget",
+      "Properties": {
+        "FileSystemId": { "Ref": "EFSFileSystem" },
+        "SubnetId": { "Ref": "PrivateSubnet1Id" },
+        "SecurityGroups": [{ "Ref": "EFSSgId" }]
+      }
+    },
+    "EFSMountTarget2": {
+      "Type": "AWS::EFS::MountTarget",
+      "Properties": {
+        "FileSystemId": { "Ref": "EFSFileSystem" },
+        "SubnetId": { "Ref": "PrivateSubnet2Id" },
+        "SecurityGroups": [{ "Ref": "EFSSgId" }]
+      }
+    },
+    "RDSSubnetGroup": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "Private DB Subnet group",
+        "SubnetIds": [{ "Ref": "PrivateSubnet1Id" }, { "Ref": "PrivateSubnet2Id" }]
+      }
+    },
+    "RDSInstance": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+        "Engine": "mysql",
+        "DBInstanceClass": "db.t3.micro",
+        "AllocatedStorage": "20",
+        "DBName": { "Ref": "DBName" },
+        "MasterUsername": { "Ref": "DBUser" },
+        "MasterUserPassword": { "Ref": "DBPassword" },
+        "PubliclyAccessible": false,
+        "DBSubnetGroupName": { "Ref": "RDSSubnetGroup" },
+        "VPCSecurityGroups": [{ "Ref": "RDSSgId" }]
+      }
+    }
+  },
+  "Outputs": {
+    "EFSFileSystemId": { "Value": { "Ref": "EFSFileSystem" } },
+    "RDSEndpoint": { "Value": { "Fn::GetAtt": ["RDSInstance", "Endpoint.Address"] } }
+  }
+}
